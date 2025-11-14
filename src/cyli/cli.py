@@ -1,7 +1,6 @@
 """Main CLI entry point."""
 import click
-from cyli.commands.hello import hello
-
+from cyli.commands import hello
 
 @click.group()
 def cli():
