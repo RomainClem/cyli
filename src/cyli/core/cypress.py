@@ -155,16 +155,14 @@ def find_src_folder(start_path: Path | None = None) -> Path | None:
 
 
 def list_src_test_files(
-    pattern: str = "*.cy.ts",
     start_path: Path | None = None,
 ) -> list[Path]:
     """List all Cypress test files in the src folder.
     
     Searches recursively through the src folder for files matching
-    the pattern (default: *.cy.ts).
+    Cypress test patterns (*.cy.ts, *.cy.tsx, *.cy.js, *.cy.jsx).
     
     Args:
-        pattern: Glob pattern to match test files (default: "*.cy.ts")
         start_path: Starting directory to search from (defaults to cwd)
         
     Returns:
@@ -174,5 +172,9 @@ def list_src_test_files(
     if src_folder is None:
         return []
     
-    files = list(src_folder.glob(f"**/{pattern}"))
+    # Handle all Cypress test file extensions
+    files: list[Path] = []
+    for ext in ["ts", "tsx", "js", "jsx"]:
+        files.extend(src_folder.glob(f"**/*.cy.{ext}"))
+    
     return sorted(files)
