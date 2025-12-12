@@ -2,6 +2,8 @@
 
 import subprocess
 import click
+from InquirerPy import inquirer
+from InquirerPy.separator import Separator
 
 from cyli.config import load_config
 from cyli.core import list_test_files, list_src_test_files
@@ -20,55 +22,50 @@ def get_test_files(test_type: str) -> list:
     return cypress_tests + src_tests
 
 
-def display_test_files(test_files: list, test_type: str) -> None:
-    """Display the list of test files."""
-    click.echo()
-    click.echo(f"Test files for '{test_type}':")
-    click.echo("-" * 40)
+def select_test_type(available_types: list[str], test_scripts: dict[str, str]) -> str | None:
+    """Prompt user to select test type using arrow keys."""
+    choices = [
+        {"name": f"{t} ({test_scripts[t]})", "value": t}
+        for t in available_types
+    ]
     
-    if not test_files:
-        click.echo("  No test files found.")
-    else:
-        for i, test_file in enumerate(test_files, 1):
-            click.echo(f"  {i}. {test_file}")
-        click.echo()
-        click.echo(f"Total: {len(test_files)} test file(s)")
+    result = inquirer.select(
+        message="Select test type:",
+        choices=choices,
+        pointer="❯",
+        qmark="🧪",
+    ).execute()
     
-    click.echo()
+    return result
 
 
-def prompt_test_selection(test_files: list) -> list:
-    """Prompt user to select which test files to run.
-    
-    Returns:
-        List of selected test file paths
-    """
+def select_test_files(test_files: list, test_type: str) -> list:
+    """Prompt user to select which test files to run using arrow keys."""
     if not test_files:
         return []
     
-    click.echo("Enter test number(s) to run (comma-separated), 'all' to run all, or 'q' to quit:")
-    selection = click.prompt("Selection", default="all")
+    choices = [
+        {"name": str(f), "value": f}
+        for f in test_files
+    ]
     
-    if selection.lower() == "q":
-        raise SystemExit(0)
+    # Add "Run all" option at the top
+    choices.insert(0, Separator("─" * 40))
+    choices.insert(0, {"name": "✅ Run all tests", "value": "__all__"})
     
-    if selection.lower() == "all":
+    result = inquirer.checkbox(
+        message=f"Select test files for '{test_type}' (Space to select, Enter to confirm):",
+        choices=choices,
+        pointer="❯",
+        qmark="📁",
+        instruction="(Use arrow keys, Space to select, Enter to confirm)",
+    ).execute()
+    
+    # If "Run all" was selected, return all test files
+    if "__all__" in result:
         return test_files
     
-    # Parse comma-separated numbers
-    selected = []
-    try:
-        indices = [int(x.strip()) for x in selection.split(",")]
-        for idx in indices:
-            if 1 <= idx <= len(test_files):
-                selected.append(test_files[idx - 1])
-            else:
-                click.echo(f"Warning: {idx} is out of range, skipping.", err=True)
-    except ValueError:
-        click.echo("Invalid selection. Please enter numbers separated by commas.", err=True)
-        raise SystemExit(1)
-    
-    return selected
+    return result
 
 
 @click.command()
@@ -110,18 +107,11 @@ def test(test_type: str | None, dry_run: bool, list_only: bool, run_all: bool):
     
     available_types = list(test_scripts.keys())
     
-    # If no type specified, prompt user to choose
+    # If no type specified, prompt user to choose with arrow keys
     if test_type is None:
-        click.echo("Available test types:")
-        for i, t in enumerate(available_types, 1):
-            script_name = test_scripts[t]
-            click.echo(f"  {i}. {t} ({script_name})")
-        
-        choice = click.prompt(
-            "Select test type",
-            type=click.Choice(available_types, case_sensitive=False),
-        )
-        test_type = choice
+        test_type = select_test_type(available_types, test_scripts)
+        if test_type is None:
+            raise SystemExit(0)
     
     # Validate test type exists in config
     if test_type not in test_scripts:
@@ -129,27 +119,40 @@ def test(test_type: str | None, dry_run: bool, list_only: bool, run_all: bool):
         click.echo(f"Available types: {', '.join(available_types)}", err=True)
         raise SystemExit(1)
     
-    # Get and display test files
+    # Get test files
     test_files = get_test_files(test_type)
-    display_test_files(test_files, test_type)
     
-    # If list-only, stop here
+    # If list-only, display and stop
     if list_only:
+        click.echo()
+        click.echo(f"Test files for '{test_type}':")
+        click.echo("-" * 40)
+        if not test_files:
+            click.echo("  No test files found.")
+        else:
+            for f in test_files:
+                click.echo(f"  • {f}")
+            click.echo()
+            click.echo(f"Total: {len(test_files)} test file(s)")
         return
     
     if not test_files:
-        click.echo("No tests to run.", err=True)
+        click.echo("No test files found.", err=True)
         raise SystemExit(1)
     
     # Select which tests to run
     if run_all:
         selected_tests = test_files
     else:
-        selected_tests = prompt_test_selection(test_files)
+        selected_tests = select_test_files(test_files, test_type)
     
     if not selected_tests:
         click.echo("No tests selected.")
         return
+    
+    click.echo()
+    click.echo(f"Selected {len(selected_tests)} test(s)")
+    click.echo()
     
     # Run each selected test
     base_cmd = config.script_runner.get_test_command(test_type)
