@@ -1,0 +1,17 @@
+{
+  "script_runner": {
+    "command": "npm",
+    "run_prefix": "run",
+    "scripts": {
+      "test": {
+        "component": "coverage:component",
+        "e2e": "coverage:e2e"
+      },
+      "build": {
+        "dev": "dev",
+        "build": "build",
+        "preview": "preview"
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "script_runner": {
+    "package_manager": "yarn",
+    "scripts": {
+      "test": {
+        "component": "coverage:component",
+        "e2e": "coverage:e2e"
+      },
+      "build": {
+        "dev": "dev",
+        "build": "build",
+        "preview": "preview"
+      }
+    }
+  }
+}
