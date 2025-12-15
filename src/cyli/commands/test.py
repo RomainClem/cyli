@@ -3,9 +3,8 @@
 import subprocess
 import click
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, OptionList, SelectionList, Static
+from textual.widgets import Header, Footer, OptionList, Static
 from textual.widgets.option_list import Option
-from textual.widgets.selection_list import Selection
 from textual.binding import Binding
 
 from cyli.config import load_config
@@ -71,11 +70,11 @@ class TestTypeSelector(App[str | None]):
         self.exit(None)
 
 
-class TestFileSelector(App[list]):
-    """App for selecting test files."""
+class TestFileSelector(App[str | None]):
+    """App for selecting a single test file."""
     
     CSS = """
-    SelectionList {
+    OptionList {
         height: auto;
         max-height: 30;
         margin: 1;
@@ -85,52 +84,34 @@ class TestFileSelector(App[list]):
         padding: 1;
         text-style: bold;
     }
-    #instructions {
-        text-align: center;
-        color: $text-muted;
-        padding-bottom: 1;
-    }
     """
     
     BINDINGS = [
         Binding("escape", "quit", "Cancel"),
-        Binding("enter", "confirm", "Confirm"),
+        Binding("enter", "select", "Select"),
     ]
     
     def __init__(self, test_files: list, test_type: str):
         super().__init__()
         self.test_files = test_files
         self.test_type = test_type
-        self.selected_files: list = []
     
     def compose(self) -> ComposeResult:
         yield Header()
-        yield Static(f"📁 Select test files for '{self.test_type}':", id="title")
-        yield Static("(Space to select, Enter to confirm)", id="instructions")
-        
-        selections = [
-            Selection("✅ Run all tests", "__all__", initial_state=False),
-        ]
-        selections.extend([
-            Selection(str(f), f, initial_state=False)
-            for f in self.test_files
-        ])
-        
-        yield SelectionList[str](*selections)
+        yield Static(f"📁 Select test file for '{self.test_type}':", id="title")
+        yield OptionList(
+            *[
+                Option(str(f), id=str(f))
+                for f in self.test_files
+            ]
+        )
         yield Footer()
     
-    def action_confirm(self) -> None:
-        selection_list = self.query_one(SelectionList)
-        selected = list(selection_list.selected)
-        
-        # If "Run all" was selected, return all test files
-        if "__all__" in selected:
-            self.exit(self.test_files)
-        else:
-            self.exit(selected)
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.exit(str(event.option.id))
     
     def action_quit(self) -> None:
-        self.exit([])
+        self.exit(None)
 
 
 def select_test_type(available_types: list[str], test_scripts: dict[str, str]) -> str | None:
@@ -139,13 +120,13 @@ def select_test_type(available_types: list[str], test_scripts: dict[str, str]) -
     return app.run()
 
 
-def select_test_files(test_files: list, test_type: str) -> list:
-    """Prompt user to select which test files to run using arrow keys."""
+def select_test_file(test_files: list, test_type: str) -> str | None:
+    """Prompt user to select a single test file to run."""
     if not test_files:
-        return []
+        return None
     
     app = TestFileSelector(test_files, test_type)
-    return app.run() or []
+    return app.run()
 
 
 @click.command()
@@ -165,13 +146,7 @@ def select_test_files(test_files: list, test_type: str) -> list:
     is_flag=True,
     help="Only list the test files without running them.",
 )
-@click.option(
-    "--all", "-a",
-    "run_all",
-    is_flag=True,
-    help="Run all tests without prompting for selection.",
-)
-def test(test_type: str | None, dry_run: bool, list_only: bool, run_all: bool):
+def test(test_type: str | None, dry_run: bool, list_only: bool):
     """Run Cypress tests (component or e2e).
     
     If no test type is specified, you will be prompted to choose.
@@ -220,44 +195,38 @@ def test(test_type: str | None, dry_run: bool, list_only: bool, run_all: bool):
         click.echo("No test files found.", err=True)
         raise SystemExit(1)
     
-    # Select which tests to run
-    if run_all:
-        selected_tests = test_files
-    else:
-        selected_tests = select_test_files(test_files, test_type)
+    # Select which test to run
+    selected_test = select_test_file(test_files, test_type)
     
-    if not selected_tests:
-        click.echo("No tests selected.")
+    if not selected_test:
+        click.echo("No test selected.")
         return
     
     click.echo()
-    click.echo(f"Selected {len(selected_tests)} test(s)")
+    click.echo(f"Selected: {selected_test}")
     click.echo()
     
-    # Run each selected test
+    # Run the selected test
     base_cmd = config.script_runner.get_test_command(test_type)
     
-    for test_file in selected_tests:
-        # Build command: base_cmd -- -- --spec "file_path"
-        cmd = base_cmd + ["--", "--", "--spec", str(test_file)]
-        cmd_str = " ".join(cmd[:-1]) + f' "{cmd[-1]}"'
-        
-        if dry_run:
-            click.echo(f"Would run: {cmd_str}")
-            continue
-        
-        click.echo(f"Running: {cmd_str}")
-        click.echo()
-        
-        # Execute the command
-        try:
-            result = subprocess.run(cmd, check=False)
-            if result.returncode != 0:
-                click.echo(f"Test failed with exit code: {result.returncode}", err=True)
-                if len(selected_tests) > 1:
-                    if not click.confirm("Continue with remaining tests?", default=True):
-                        raise SystemExit(result.returncode)
-        except FileNotFoundError:
-            click.echo(f"Command not found: {cmd[0]}", err=True)
-            click.echo("Make sure the package manager is installed.", err=True)
-            raise SystemExit(1)
+    # Build command: base_cmd -- -- --spec "file_path"
+    cmd = base_cmd + ["--", "--", "--spec", str(selected_test)]
+    cmd_str = " ".join(cmd[:-1]) + f' "{cmd[-1]}"'
+    
+    if dry_run:
+        click.echo(f"Would run: {cmd_str}")
+        return
+    
+    click.echo(f"Running: {cmd_str}")
+    click.echo()
+    
+    # Execute the command
+    try:
+        result = subprocess.run(cmd, check=False)
+        if result.returncode != 0:
+            click.echo(f"Test failed with exit code: {result.returncode}", err=True)
+            raise SystemExit(result.returncode)
+    except FileNotFoundError:
+        click.echo(f"Command not found: {cmd[0]}", err=True)
+        click.echo("Make sure the package manager is installed.", err=True)
+        raise SystemExit(1)
