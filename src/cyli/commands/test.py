@@ -2,8 +2,11 @@
 
 import subprocess
 import click
-from InquirerPy import inquirer
-from InquirerPy.separator import Separator
+from textual.app import App, ComposeResult
+from textual.widgets import Header, Footer, OptionList, SelectionList, Static
+from textual.widgets.option_list import Option
+from textual.widgets.selection_list import Selection
+from textual.binding import Binding
 
 from cyli.config import load_config
 from cyli.core import list_test_files, list_src_test_files
@@ -22,21 +25,118 @@ def get_test_files(test_type: str) -> list:
     return cypress_tests + src_tests
 
 
-def select_test_type(available_types: list[str], test_scripts: dict[str, str]) -> str | None:
-    """Prompt user to select test type using arrow keys."""
-    choices = [
-        {"name": f"{t} ({test_scripts[t]})", "value": t}
-        for t in available_types
+class TestTypeSelector(App[str | None]):
+    """App for selecting test type."""
+    
+    CSS = """
+    OptionList {
+        height: auto;
+        max-height: 20;
+        margin: 1;
+    }
+    #title {
+        text-align: center;
+        padding: 1;
+        text-style: bold;
+    }
+    """
+    
+    BINDINGS = [
+        Binding("escape", "quit", "Cancel"),
+        Binding("enter", "select", "Select"),
     ]
     
-    result = inquirer.select(
-        message="Select test type:",
-        choices=choices,
-        pointer="❯",
-        qmark="🧪",
-    ).execute()
+    def __init__(self, available_types: list[str], test_scripts: dict[str, str]):
+        super().__init__()
+        self.available_types = available_types
+        self.test_scripts = test_scripts
+        self.selected_type: str | None = None
     
-    return result
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield Static("🧪 Select test type:", id="title")
+        yield OptionList(
+            *[
+                Option(f"{t} ({self.test_scripts[t]})", id=t)
+                for t in self.available_types
+            ]
+        )
+        yield Footer()
+    
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.selected_type = str(event.option.id)
+        self.exit(self.selected_type)
+    
+    def action_quit(self) -> None:
+        self.exit(None)
+
+
+class TestFileSelector(App[list]):
+    """App for selecting test files."""
+    
+    CSS = """
+    SelectionList {
+        height: auto;
+        max-height: 30;
+        margin: 1;
+    }
+    #title {
+        text-align: center;
+        padding: 1;
+        text-style: bold;
+    }
+    #instructions {
+        text-align: center;
+        color: $text-muted;
+        padding-bottom: 1;
+    }
+    """
+    
+    BINDINGS = [
+        Binding("escape", "quit", "Cancel"),
+        Binding("enter", "confirm", "Confirm"),
+    ]
+    
+    def __init__(self, test_files: list, test_type: str):
+        super().__init__()
+        self.test_files = test_files
+        self.test_type = test_type
+        self.selected_files: list = []
+    
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield Static(f"📁 Select test files for '{self.test_type}':", id="title")
+        yield Static("(Space to select, Enter to confirm)", id="instructions")
+        
+        selections = [
+            Selection("✅ Run all tests", "__all__", initial_state=False),
+        ]
+        selections.extend([
+            Selection(str(f), f, initial_state=False)
+            for f in self.test_files
+        ])
+        
+        yield SelectionList[str](*selections)
+        yield Footer()
+    
+    def action_confirm(self) -> None:
+        selection_list = self.query_one(SelectionList)
+        selected = list(selection_list.selected)
+        
+        # If "Run all" was selected, return all test files
+        if "__all__" in selected:
+            self.exit(self.test_files)
+        else:
+            self.exit(selected)
+    
+    def action_quit(self) -> None:
+        self.exit([])
+
+
+def select_test_type(available_types: list[str], test_scripts: dict[str, str]) -> str | None:
+    """Prompt user to select test type using arrow keys."""
+    app = TestTypeSelector(available_types, test_scripts)
+    return app.run()
 
 
 def select_test_files(test_files: list, test_type: str) -> list:
@@ -44,28 +144,8 @@ def select_test_files(test_files: list, test_type: str) -> list:
     if not test_files:
         return []
     
-    choices = [
-        {"name": str(f), "value": f}
-        for f in test_files
-    ]
-    
-    # Add "Run all" option at the top
-    choices.insert(0, Separator("─" * 40))
-    choices.insert(0, {"name": "✅ Run all tests", "value": "__all__"})
-    
-    result = inquirer.checkbox(
-        message=f"Select test files for '{test_type}' (Space to select, Enter to confirm):",
-        choices=choices,
-        pointer="❯",
-        qmark="📁",
-        instruction="(Use arrow keys, Space to select, Enter to confirm)",
-    ).execute()
-    
-    # If "Run all" was selected, return all test files
-    if "__all__" in result:
-        return test_files
-    
-    return result
+    app = TestFileSelector(test_files, test_type)
+    return app.run() or []
 
 
 @click.command()
