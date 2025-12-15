@@ -2,8 +2,7 @@
 
 import subprocess
 import click
-from InquirerPy import inquirer
-from InquirerPy.separator import Separator
+from prompt_toolkit.shortcuts import radiolist_dialog, checkboxlist_dialog
 
 from cyli.config import load_config
 from cyli.core import list_test_files, list_src_test_files
@@ -25,16 +24,15 @@ def get_test_files(test_type: str) -> list:
 def select_test_type(available_types: list[str], test_scripts: dict[str, str]) -> str | None:
     """Prompt user to select test type using arrow keys."""
     choices = [
-        {"name": f"{t} ({test_scripts[t]})", "value": t}
+        (t, f"{t} ({test_scripts[t]})")
         for t in available_types
     ]
     
-    result = inquirer.select(
-        message="Select test type:",
-        choices=choices,
-        pointer="❯",
-        qmark="🧪",
-    ).execute()
+    result = radiolist_dialog(
+        title="🧪 Select test type",
+        text="Use arrow keys to navigate, Enter to confirm:",
+        values=choices,
+    ).run()
     
     return result
 
@@ -44,22 +42,22 @@ def select_test_files(test_files: list, test_type: str) -> list:
     if not test_files:
         return []
     
-    choices = [
-        {"name": str(f), "value": f}
+    # Add "Run all" option at the top, then all test files
+    choices = [("__all__", "✅ Run all tests")]
+    choices.extend([
+        (f, str(f))
         for f in test_files
-    ]
+    ])
     
-    # Add "Run all" option at the top
-    choices.insert(0, Separator("─" * 40))
-    choices.insert(0, {"name": "✅ Run all tests", "value": "__all__"})
+    result = checkboxlist_dialog(
+        title=f"📁 Select test files for '{test_type}'",
+        text="Use arrow keys, Space to select, Enter to confirm:",
+        values=choices,
+    ).run()
     
-    result = inquirer.checkbox(
-        message=f"Select test files for '{test_type}' (Space to select, Enter to confirm):",
-        choices=choices,
-        pointer="❯",
-        qmark="📁",
-        instruction="(Use arrow keys, Space to select, Enter to confirm)",
-    ).execute()
+    # If cancelled (None) or empty, return empty list
+    if not result:
+        return []
     
     # If "Run all" was selected, return all test files
     if "__all__" in result:
