@@ -1,9 +1,13 @@
 """Test command implementation."""
 
-import subprocess
+import asyncio
+from pathlib import Path
 import click
-from InquirerPy import inquirer
-from InquirerPy.separator import Separator
+from textual.app import App, ComposeResult
+from textual.containers import Horizontal, Vertical
+from textual.widgets import Header, Footer, OptionList, Static, RichLog
+from textual.widgets.option_list import Option
+from textual.binding import Binding
 
 from cyli.config import load_config
 from cyli.core import list_test_files, list_src_test_files
@@ -22,50 +26,289 @@ def get_test_files(test_type: str) -> list:
     return cypress_tests + src_tests
 
 
+class TestTypeSelector(App[str | None]):
+    """App for selecting test type."""
+    
+    CSS = """
+    OptionList {
+        height: auto;
+        max-height: 20;
+        margin: 1;
+    }
+    #title {
+        text-align: center;
+        padding: 1;
+        text-style: bold;
+    }
+    """
+    
+    BINDINGS = [
+        Binding("escape", "quit", "Cancel"),
+        Binding("enter", "select", "Select"),
+    ]
+    
+    def __init__(self, available_types: list[str], test_scripts: dict[str, str]):
+        super().__init__()
+        self.available_types = available_types
+        self.test_scripts = test_scripts
+        self.selected_type: str | None = None
+    
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield Static("🧪 Select test type:", id="title")
+        yield OptionList(
+            *[
+                Option(f"{t} ({self.test_scripts[t]})", id=t)
+                for t in self.available_types
+            ]
+        )
+        yield Footer()
+    
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.selected_type = str(event.option.id)
+        self.exit(self.selected_type)
+    
+    def action_quit(self) -> None:
+        self.exit(None)
+
+
+class TestFileSelector(App[str | None]):
+    """App for selecting a single test file."""
+    
+    CSS = """
+    OptionList {
+        height: auto;
+        max-height: 30;
+        margin: 1;
+    }
+    #title {
+        text-align: center;
+        padding: 1;
+        text-style: bold;
+    }
+    """
+    
+    BINDINGS = [
+        Binding("escape", "quit", "Cancel"),
+        Binding("enter", "select", "Select"),
+    ]
+    
+    def __init__(self, test_files: list, test_type: str):
+        super().__init__()
+        self.test_files = test_files
+        self.test_type = test_type
+    
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield Static(f"📁 Select test file for '{self.test_type}':", id="title")
+        yield OptionList(
+            *[
+                Option(Path(f).stem, id=str(f))
+                for f in self.test_files
+            ]
+        )
+        yield Footer()
+    
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.exit(str(event.option.id))
+    
+    def action_quit(self) -> None:
+        self.exit(None)
+
+
+class TestRunnerApp(App[None]):
+    """App for selecting and running tests with live output."""
+    
+    CSS = """
+    #main-container {
+        layout: horizontal;
+    }
+    
+    #test-list-panel {
+        width: 1fr;
+        border: solid $primary;
+        height: 100%;
+    }
+    
+    #output-panel {
+        width: 3fr;
+        border: solid $secondary;
+        height: 100%;
+    }
+    
+    #test-list-title {
+        text-align: center;
+        padding: 1;
+        text-style: bold;
+        background: $primary-background;
+    }
+    
+    #output-title {
+        text-align: center;
+        padding: 1;
+        text-style: bold;
+        background: $secondary-background;
+    }
+    
+    OptionList {
+        height: 1fr;
+    }
+    
+    RichLog {
+        height: 1fr;
+        scrollbar-gutter: stable;
+    }
+    
+    #status-bar {
+        height: 1;
+        background: $surface;
+        color: $text-muted;
+        padding: 0 1;
+    }
+    """
+    
+    BINDINGS = [
+        Binding("escape", "quit", "Quit"),
+        Binding("q", "quit", "Quit"),
+        Binding("h", "focus_list", "Focus List"),
+        Binding("l", "focus_output", "Focus Output"),
+        Binding("tab", "toggle_focus", "Switch Panel"),
+    ]
+    
+    def __init__(self, test_files: list, test_type: str, base_cmd: list[str]):
+        super().__init__()
+        self.test_files = test_files
+        self.test_type = test_type
+        self.base_cmd = base_cmd
+        self.current_process: asyncio.subprocess.Process | None = None
+    
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with Horizontal(id="main-container"):
+            with Vertical(id="test-list-panel"):
+                yield Static(f"📁 {self.test_type} tests", id="test-list-title")
+                yield OptionList(
+                    *[
+                        Option(Path(f).stem, id=str(f))
+                        for f in self.test_files
+                    ],
+                    id="test-list"
+                )
+            with Vertical(id="output-panel"):
+                yield Static("📋 Output", id="output-title")
+                yield RichLog(id="output-log", highlight=True, markup=True)
+        yield Static("Ready. Select a test to run.", id="status-bar")
+        yield Footer()
+    
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """Handle test selection and run the test."""
+        test_file = str(event.option.id)
+        self.run_test(test_file)
+    
+    def run_test(self, test_file: str) -> None:
+        """Run the selected test and stream output."""
+        output_log = self.query_one("#output-log", RichLog)
+        status_bar = self.query_one("#status-bar", Static)
+        
+        # Cancel any running test first
+        if self.current_process is not None:
+            output_log.write("\n[bold yellow]⚠ Cancelling previous test...[/bold yellow]\n")
+            try:
+                self.current_process.terminate()
+            except ProcessLookupError:
+                pass  # Process already finished
+            self.current_process = None
+        
+        # Clear previous output
+        output_log.clear()
+        
+        # Build command
+        cmd = self.base_cmd + ["--", "--", "--spec", test_file]
+        cmd_str = " ".join(cmd[:-1]) + f' "{cmd[-1]}"'
+        
+        output_log.write(f"[bold blue]Running:[/bold blue] {cmd_str}\n")
+        output_log.write("-" * 60 + "\n")
+        status_bar.update(f"Running: {Path(test_file).stem}...")
+        
+        # Run command asynchronously
+        self.run_worker(self._run_command(cmd, test_file), exclusive=True)
+    
+    async def _run_command(self, cmd: list[str], test_file: str) -> None:
+        """Run command and stream output to the log."""
+        output_log = self.query_one("#output-log", RichLog)
+        status_bar = self.query_one("#status-bar", Static)
+        
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            self.current_process = process
+            
+            # Stream output
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                decoded_line = line.decode("utf-8", errors="replace").rstrip()
+                output_log.write(decoded_line)
+            
+            await process.wait()
+            
+            output_log.write("\n" + "-" * 60)
+            if process.returncode == 0:
+                output_log.write("\n[bold green]✓ Test passed[/bold green]")
+                status_bar.update(f"✓ {Path(test_file).stem} passed. Select another test to run.")
+            else:
+                output_log.write(f"\n[bold red]✗ Test failed (exit code: {process.returncode})[/bold red]")
+                status_bar.update(f"✗ {Path(test_file).stem} failed. Select another test to run.")
+                
+        except FileNotFoundError:
+            output_log.write(f"\n[bold red]Error: Command not found: {cmd[0]}[/bold red]")
+            output_log.write("\nMake sure the package manager is installed.")
+            status_bar.update("Error: Command not found")
+        except Exception as e:
+            output_log.write(f"\n[bold red]Error: {e}[/bold red]")
+            status_bar.update(f"Error: {e}")
+        finally:
+            self.current_process = None
+    
+    def action_quit(self) -> None:
+        """Quit the app, cancelling any running process."""
+        if self.current_process:
+            self.current_process.terminate()
+        self.exit(None)
+    
+    def action_focus_list(self) -> None:
+        """Focus the test list panel."""
+        self.query_one("#test-list", OptionList).focus()
+    
+    def action_focus_output(self) -> None:
+        """Focus the output panel."""
+        self.query_one("#output-log", RichLog).focus()
+    
+    def action_toggle_focus(self) -> None:
+        """Toggle focus between panels."""
+        test_list = self.query_one("#test-list", OptionList)
+        output_log = self.query_one("#output-log", RichLog)
+        
+        if test_list.has_focus:
+            output_log.focus()
+        else:
+            test_list.focus()
+
+
 def select_test_type(available_types: list[str], test_scripts: dict[str, str]) -> str | None:
     """Prompt user to select test type using arrow keys."""
-    choices = [
-        {"name": f"{t} ({test_scripts[t]})", "value": t}
-        for t in available_types
-    ]
-    
-    result = inquirer.select(
-        message="Select test type:",
-        choices=choices,
-        pointer="❯",
-        qmark="🧪",
-    ).execute()
-    
-    return result
+    app = TestTypeSelector(available_types, test_scripts)
+    return app.run()
 
 
-def select_test_files(test_files: list, test_type: str) -> list:
-    """Prompt user to select which test files to run using arrow keys."""
-    if not test_files:
-        return []
-    
-    choices = [
-        {"name": str(f), "value": f}
-        for f in test_files
-    ]
-    
-    # Add "Run all" option at the top
-    choices.insert(0, Separator("─" * 40))
-    choices.insert(0, {"name": "✅ Run all tests", "value": "__all__"})
-    
-    result = inquirer.checkbox(
-        message=f"Select test files for '{test_type}' (Space to select, Enter to confirm):",
-        choices=choices,
-        pointer="❯",
-        qmark="📁",
-        instruction="(Use arrow keys, Space to select, Enter to confirm)",
-    ).execute()
-    
-    # If "Run all" was selected, return all test files
-    if "__all__" in result:
-        return test_files
-    
-    return result
+def run_test_runner(test_files: list, test_type: str, base_cmd: list[str]) -> None:
+    """Run the interactive test runner app."""
+    app = TestRunnerApp(test_files, test_type, base_cmd)
+    app.run()
 
 
 @click.command()
@@ -85,13 +328,7 @@ def select_test_files(test_files: list, test_type: str) -> list:
     is_flag=True,
     help="Only list the test files without running them.",
 )
-@click.option(
-    "--all", "-a",
-    "run_all",
-    is_flag=True,
-    help="Run all tests without prompting for selection.",
-)
-def test(test_type: str | None, dry_run: bool, list_only: bool, run_all: bool):
+def test(test_type: str | None, dry_run: bool, list_only: bool):
     """Run Cypress tests (component or e2e).
     
     If no test type is specified, you will be prompted to choose.
@@ -140,44 +377,14 @@ def test(test_type: str | None, dry_run: bool, list_only: bool, run_all: bool):
         click.echo("No test files found.", err=True)
         raise SystemExit(1)
     
-    # Select which tests to run
-    if run_all:
-        selected_tests = test_files
-    else:
-        selected_tests = select_test_files(test_files, test_type)
-    
-    if not selected_tests:
-        click.echo("No tests selected.")
-        return
-    
-    click.echo()
-    click.echo(f"Selected {len(selected_tests)} test(s)")
-    click.echo()
-    
-    # Run each selected test
+    # Get the base command for running tests
     base_cmd = config.script_runner.get_test_command(test_type)
     
-    for test_file in selected_tests:
-        # Build command: base_cmd -- -- --spec "file_path"
-        cmd = base_cmd + ["--", "--", "--spec", str(test_file)]
-        cmd_str = " ".join(cmd[:-1]) + f' "{cmd[-1]}"'
-        
-        if dry_run:
-            click.echo(f"Would run: {cmd_str}")
-            continue
-        
-        click.echo(f"Running: {cmd_str}")
-        click.echo()
-        
-        # Execute the command
-        try:
-            result = subprocess.run(cmd, check=False)
-            if result.returncode != 0:
-                click.echo(f"Test failed with exit code: {result.returncode}", err=True)
-                if len(selected_tests) > 1:
-                    if not click.confirm("Continue with remaining tests?", default=True):
-                        raise SystemExit(result.returncode)
-        except FileNotFoundError:
-            click.echo(f"Command not found: {cmd[0]}", err=True)
-            click.echo("Make sure the package manager is installed.", err=True)
-            raise SystemExit(1)
+    if dry_run:
+        click.echo("Dry run mode - showing command format:")
+        cmd_str = " ".join(base_cmd) + ' -- -- --spec "<test_file>"'
+        click.echo(f"  {cmd_str}")
+        return
+    
+    # Launch the interactive test runner
+    run_test_runner(test_files, test_type, base_cmd)
