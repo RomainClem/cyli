@@ -1,6 +1,7 @@
 """Test command implementation."""
 
 import subprocess
+from pathlib import Path
 import click
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, OptionList, Static
@@ -101,7 +102,7 @@ class TestFileSelector(App[str | None]):
         yield Static(f"📁 Select test file for '{self.test_type}':", id="title")
         yield OptionList(
             *[
-                Option(str(f), id=str(f))
+                Option(Path(f).stem, id=str(f))
                 for f in self.test_files
             ]
         )
