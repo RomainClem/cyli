@@ -170,6 +170,9 @@ class TestRunnerApp(App[None]):
     BINDINGS = [
         Binding("escape", "quit", "Quit"),
         Binding("q", "quit", "Quit"),
+        Binding("h", "focus_list", "Focus List"),
+        Binding("l", "focus_output", "Focus Output"),
+        Binding("tab", "toggle_focus", "Switch Panel"),
     ]
     
     def __init__(self, test_files: list, test_type: str, base_cmd: list[str]):
@@ -206,6 +209,15 @@ class TestRunnerApp(App[None]):
         """Run the selected test and stream output."""
         output_log = self.query_one("#output-log", RichLog)
         status_bar = self.query_one("#status-bar", Static)
+        
+        # Cancel any running test first
+        if self.current_process is not None:
+            output_log.write("\n[bold yellow]⚠ Cancelling previous test...[/bold yellow]\n")
+            try:
+                self.current_process.terminate()
+            except ProcessLookupError:
+                pass  # Process already finished
+            self.current_process = None
         
         # Clear previous output
         output_log.clear()
@@ -267,6 +279,24 @@ class TestRunnerApp(App[None]):
         if self.current_process:
             self.current_process.terminate()
         self.exit(None)
+    
+    def action_focus_list(self) -> None:
+        """Focus the test list panel."""
+        self.query_one("#test-list", OptionList).focus()
+    
+    def action_focus_output(self) -> None:
+        """Focus the output panel."""
+        self.query_one("#output-log", RichLog).focus()
+    
+    def action_toggle_focus(self) -> None:
+        """Toggle focus between panels."""
+        test_list = self.query_one("#test-list", OptionList)
+        output_log = self.query_one("#output-log", RichLog)
+        
+        if test_list.has_focus:
+            output_log.focus()
+        else:
+            test_list.focus()
 
 
 def select_test_type(available_types: list[str], test_scripts: dict[str, str]) -> str | None:
