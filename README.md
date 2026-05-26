@@ -54,13 +54,13 @@ cyli --help
 
 ### Keybindings in the runner TUI
 
-| Key       | Action                |
-| --------- | --------------------- |
-| `↑` / `↓` | Move selection / scroll |
-| `Enter`   | Run the selected test |
-| `h`       | Focus the file list   |
-| `l`       | Focus the output pane |
-| `Tab`     | Toggle focus          |
+| Key         | Action                           |
+| ----------- | -------------------------------- |
+| `↑` / `↓`   | Move selection / scroll          |
+| `Enter`     | Run the selected test            |
+| `h`         | Focus the file list              |
+| `l`         | Focus the output pane            |
+| `Tab`       | Toggle focus                     |
 | `q` / `Esc` | Quit (kills any running process) |
 
 Selecting a different test while one is running cancels the previous process.

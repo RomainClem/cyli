@@ -1,7 +1,10 @@
 import { existsSync, statSync } from "node:fs";
 import { dirname, resolve, join, parse } from "node:path";
 
-export function findFileUpwards(filename: string, startPath: string = process.cwd()): string | null {
+export function findFileUpwards(
+  filename: string,
+  startPath: string = process.cwd(),
+): string | null {
   let current = resolve(startPath);
   const { root } = parse(current);
 
@@ -13,7 +16,14 @@ export function findFileUpwards(filename: string, startPath: string = process.cw
   }
 }
 
-const DEFAULT_MARKERS = ["package.json", "pyproject.toml", "setup.py", "Cargo.toml", "go.mod", ".git"];
+const DEFAULT_MARKERS = [
+  "package.json",
+  "pyproject.toml",
+  "setup.py",
+  "Cargo.toml",
+  "go.mod",
+  ".git",
+];
 
 export function findProjectRoot(
   markerFiles: string[] = DEFAULT_MARKERS,

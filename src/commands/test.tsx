@@ -1,6 +1,5 @@
 import React from "react";
 import { render } from "ink";
-import { basename } from "node:path";
 import { loadConfig, getTestCommand } from "../config.ts";
 import { getTestFiles } from "../core/cypress.ts";
 import { TestTypeSelector, type TypeChoice } from "../ui/TestTypeSelector.tsx";

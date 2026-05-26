@@ -18,7 +18,9 @@ export function findCypressFolder(startPath?: string): string | null {
 
 export function findTestFolder(testType: string, startPath?: string): string | null {
   if (!(testType in TEST_FOLDERS)) {
-    throw new Error(`Unknown test type: ${testType}. Available: ${Object.keys(TEST_FOLDERS).join(", ")}`);
+    throw new Error(
+      `Unknown test type: ${testType}. Available: ${Object.keys(TEST_FOLDERS).join(", ")}`,
+    );
   }
   const cypressFolder = findCypressFolder(startPath);
   if (!cypressFolder) return null;
@@ -45,7 +47,7 @@ function globTestFiles(folder: string): string[] {
     }
   };
   walk(folder);
-  return files.sort();
+  return files.toSorted();
 }
 
 export function listTestFiles(testType: string, startPath?: string): string[] {

@@ -18,9 +18,7 @@ interface LogLine {
   bold?: boolean;
 }
 
-type LogAction =
-  | { kind: "clear" }
-  | { kind: "append"; lines: Omit<LogLine, "id">[] };
+type LogAction = { kind: "clear" } | { kind: "append"; lines: Omit<LogLine, "id">[] };
 
 const MAX_LOG_LINES = 2000;
 let lineCounter = 0;
@@ -73,10 +71,7 @@ export function TestRunner({ testFiles, testType, baseCmd }: Props) {
 
     dispatchLog({
       kind: "append",
-      lines: [
-        { text: `Running: ${cmdStr}`, color: "blue", bold: true },
-        { text: "-".repeat(60) },
-      ],
+      lines: [{ text: `Running: ${cmdStr}`, color: "blue", bold: true }, { text: "-".repeat(60) }],
     });
     setStatus(`Running: ${basename(testFile)}...`);
 
@@ -110,9 +105,10 @@ export function TestRunner({ testFiles, testType, baseCmd }: Props) {
 
     proc.on("error", (err) => {
       if (processRef.current !== proc) return;
-      const msg = (err as NodeJS.ErrnoException).code === "ENOENT"
-        ? `Error: Command not found: ${cmd[0]}\nMake sure the package manager is installed.`
-        : `Error: ${err.message}`;
+      const msg =
+        (err as NodeJS.ErrnoException).code === "ENOENT"
+          ? `Error: Command not found: ${cmd[0]}\nMake sure the package manager is installed.`
+          : `Error: ${err.message}`;
       dispatchLog({
         kind: "append",
         lines: msg.split("\n").map((text) => ({ text, color: "red", bold: true })),
@@ -206,7 +202,11 @@ export function TestRunner({ testFiles, testType, baseCmd }: Props) {
               const active = i === selectedIdx;
               const focused = active && focus === "list";
               return (
-                <Text key={f} color={focused ? "cyan" : undefined} inverse={active && focus !== "list"}>
+                <Text
+                  key={f}
+                  color={focused ? "cyan" : undefined}
+                  inverse={active && focus !== "list"}
+                >
                   {focused ? "❯ " : "  "}
                   {basename(f).replace(/\.cy\.(ts|tsx|js|jsx)$/, "")}
                 </Text>
