@@ -1,132 +1,76 @@
 # Cyli
 
-A CLI tool for managing and running Cypress tests with ease. Cyli helps you discover, select, and run Cypress component and e2e tests from any project directory.
+An interactive CLI/TUI for discovering and running Cypress tests, built with [Ink](https://github.com/vadimdemedes/ink) and [Bun](https://bun.sh).
 
 ## Features
 
-- 🔍 **Auto-discovery** - Automatically finds Cypress test files in your project
-- 🎯 **Selective testing** - Choose specific test files to run
-- ⚙️ **Configurable** - Support for npm, yarn, pnpm, and bun
-- 📁 **Smart search** - Finds tests in both `cypress/` and `src/` folders
+- 🔍 **Auto-discovery** — finds Cypress test files in `cypress/` and `src/`
+- 🎯 **Interactive selection** — pick a test type and file from a TUI
+- 📺 **Live output** — streams the runner's stdout/stderr next to the file list
+- ⚙️ **Pluggable** — works with npm, yarn, pnpm, and bun
 
 ## Installation
 
-### Using UV (Recommended)
-
-#### Install globally as a tool
-
 ```bash
-# Install from the repository
-uv tool install git+https://github.com/yourusername/cyli.git
+# Global, via npm
+npm install -g cyli
 
-# Or install locally in editable mode (for development)
-cd /path/to/cyli
-uv tool install -e .
+# Or run ad-hoc
+npx cyli test
 ```
 
-#### Install in a project
-
-```bash
-uv add cyli
-```
-
-### Verify Installation
-
-```bash
-cyli --help
-```
+Requires Node.js ≥ 18.
 
 ## Quick Start
 
-1. Navigate to your Cypress project:
-   ```bash
-   cd /path/to/your/cypress-project
-   ```
+From any Cypress project directory:
 
-2. Run tests interactively:
-   ```bash
-   cyli test
-   ```
+```bash
+cyli test
+```
 
-3. The CLI will:
-   - Prompt you to select test type (component or e2e)
-   - Display available test files
-   - Let you select which tests to run
+You'll be prompted to choose a test type (`component` or `e2e`), then shown a list of test files. Select one to run it and watch live output.
 
 ## Usage
 
-### Running Tests
-
 ```bash
-# Interactive mode - prompts for test type and file selection
+# Interactive mode (prompt for type, then pick file in TUI)
 cyli test
 
-# Specify test type directly
+# Skip the type prompt
 cyli test --type component
 cyli test -t e2e
 
-# Run all tests without prompting
-cyli test --type component --all
-cyli test -t e2e -a
-
-# List test files without running
+# List discovered test files and exit
 cyli test --list-only
 cyli test -l
 
-# Preview command without executing (dry run)
-cyli test --dry-run
+# Print the command without executing
+cyli test --dry-run --type e2e
+
+# Help
+cyli --help
 ```
 
-### Example Session
+### Keybindings in the runner TUI
 
-```
-$ cyli test
+| Key         | Action                           |
+| ----------- | -------------------------------- |
+| `↑` / `↓`   | Move selection / scroll          |
+| `Enter`     | Run the selected test            |
+| `h`         | Focus the file list              |
+| `l`         | Focus the output pane            |
+| `Tab`       | Toggle focus                     |
+| `q` / `Esc` | Quit (kills any running process) |
 
-Available test types:
-  1. component (coverage:component)
-  2. e2e (coverage:e2e)
-Select test type: component
-
-Test files for 'component':
-----------------------------------------
-  1. /home/user/project/cypress/component/Button.cy.ts
-  2. /home/user/project/src/components/Form.cy.tsx
-  3. /home/user/project/src/hooks/useAuth.cy.ts
-
-Total: 3 test file(s)
-
-Enter test number(s) to run (comma-separated), 'all' to run all, or 'q' to quit:
-Selection: 1,3
-
-Running: npm run coverage:component -- -- --spec "/home/user/project/cypress/component/Button.cy.ts"
-```
+Selecting a different test while one is running cancels the previous process.
 
 ## Configuration
 
-Cyli looks for a `cyli.json` configuration file in your project root (or any parent directory).
+Cyli looks for a `cyli.json` file in the current directory or any ancestor. With no config, it defaults to npm + `coverage:component` / `coverage:e2e` scripts.
 
-### Create a Config File
+### Example: shorthand using a package-manager preset
 
-Create `cyli.json` in your project root:
-
-```json
-{
-  "script_runner": {
-    "command": "npm",
-    "run_prefix": "run",
-    "scripts": {
-      "test": {
-        "component": "coverage:component",
-        "e2e": "coverage:e2e"
-      }
-    }
-  }
-}
-```
-
-### Using Different Package Managers
-
-**Yarn:**
 ```json
 {
   "script_runner": {
@@ -141,7 +85,8 @@ Create `cyli.json` in your project root:
 }
 ```
 
-**pnpm:**
+### Example: explicit command/prefix
+
 ```json
 {
   "script_runner": {
@@ -157,74 +102,62 @@ Create `cyli.json` in your project root:
 }
 ```
 
-### Supported Package Managers
+### Supported package managers
 
-| Package Manager | Command | Run Prefix |
-|-----------------|---------|------------|
-| npm             | `npm`   | `run`      |
-| yarn            | `yarn`  | (none)     |
-| pnpm            | `pnpm`  | `run`      |
-| bun             | `bun`   | `run`      |
+| Manager | Command | Run prefix |
+| ------- | ------- | ---------- |
+| npm     | `npm`   | `run`      |
+| yarn    | `yarn`  | (none)     |
+| pnpm    | `pnpm`  | `run`      |
+| bun     | `bun`   | `run`      |
+
+Each invocation is built as:
+
+```
+<command> [run] <script> -- -- --spec <test_file>
+```
+
+See `cyli.example.json` and `cyli.example.yarn.json`.
 
 ## Development
 
-### Setup
+Built with Bun. To work on cyli locally:
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/cyli.git
-cd cyli
+# Install deps
+bun install
 
-# Install dependencies with UV
-uv sync
+# Run from source
+bun run dev test --list-only
 
-# Run locally
-uv run cyli --help
+# Type-check
+bun run typecheck
+
+# Run tests
+bun test
+
+# Build the publishable artifact
+bun run build
+node dist/cli.js --help
 ```
 
-### Install in Editable Mode
-
-```bash
-# Install as a global tool (changes reflect immediately)
-uv tool install -e .
-
-# Now use it anywhere
-cyli test
-```
-
-### Project Structure
+### Project layout
 
 ```
 cyli/
-├── src/cyli/
-│   ├── cli.py           # Main CLI entry point
-│   ├── config.py        # Configuration management
-│   ├── commands/        # CLI commands
-│   │   ├── hello.py
-│   │   └── test.py      # Test command
-│   ├── core/            # Core functionality
-│   │   └── cypress.py   # Cypress test discovery
-│   └── utils/           # Utilities
-│       └── files.py     # File system helpers
-├── cyli.json            # Example config
-├── pyproject.toml
-└── README.md
-```
-
-### UV Tool Commands
-
-```bash
-# List installed tools
-uv tool list
-
-# Upgrade cyli
-uv tool upgrade cyli
-
-# Uninstall
-uv tool uninstall cyli
-
-# Reinstall (useful after major changes)
-uv tool uninstall cyli && uv tool install -e .
+├── src/
+│   ├── cli.ts                  # entry point
+│   ├── args.ts                 # tiny argv parser
+│   ├── config.ts               # cyli.json loading + command building
+│   ├── core/cypress.ts         # test discovery
+│   ├── utils/files.ts          # upward-search + project root
+│   ├── commands/test.tsx       # test command orchestrator
+│   └── ui/
+│       ├── TestTypeSelector.tsx
+│       └── TestRunner.tsx
+├── tests/                      # bun:test specs for core logic
+├── package.json
+└── tsconfig.json
 ```
 
 ## License
