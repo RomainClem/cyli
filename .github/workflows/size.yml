@@ -1,0 +1,70 @@
+name: Bundle size
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  size:
+    name: Compare dist/cli.js size
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+
+      - name: Checkout head
+        uses: actions/checkout@v4
+        with:
+          path: head
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build base
+        working-directory: base
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Build head
+        working-directory: head
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Compute sizes
+        id: sizes
+        run: |
+          base_bytes=$(wc -c < base/dist/cli.js)
+          head_bytes=$(wc -c < head/dist/cli.js)
+          delta=$((head_bytes - base_bytes))
+          pct=$(awk -v b="$base_bytes" -v d="$delta" 'BEGIN { if (b == 0) print "n/a"; else printf "%.2f", (d / b) * 100 }')
+          base_kb=$(awk -v b="$base_bytes" 'BEGIN { printf "%.2f", b / 1024 }')
+          head_kb=$(awk -v h="$head_bytes" 'BEGIN { printf "%.2f", h / 1024 }')
+          delta_kb=$(awk -v d="$delta" 'BEGIN { printf "%+.2f", d / 1024 }')
+          {
+            echo "base_kb=$base_kb"
+            echo "head_kb=$head_kb"
+            echo "delta_kb=$delta_kb"
+            echo "pct=$pct"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Comment on PR
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: bundle-size
+          message: |
+            ### 📦 `dist/cli.js` size
+
+            | base | head | delta |
+            | ---: | ---: | ---: |
+            | ${{ steps.sizes.outputs.base_kb }} KB | ${{ steps.sizes.outputs.head_kb }} KB | ${{ steps.sizes.outputs.delta_kb }} KB (${{ steps.sizes.outputs.pct }}%) |

@@ -1,0 +1,49 @@
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+          - "lefthook.yml"
+
+ui:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/ui/**"
+
+core:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/core/**"
+          - "src/utils/**"
+          - "src/config.ts"
+          - "src/args.ts"
+
+cli:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/cli.ts"
+          - "src/commands/**"
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "tests/**"
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "README.md"
+          - "docs/**"
+          - "**/*.md"
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "package.json"
+          - "bun.lock"
+
+build:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "tsconfig.json"
+          - ".oxlintrc.json"
+          - ".oxfmtrc.json"

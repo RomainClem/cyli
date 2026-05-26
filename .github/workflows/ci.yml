@@ -8,7 +8,7 @@ on:
 
 jobs:
   check:
-    name: Typecheck, test, build
+    name: Lint, typecheck, test, build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,12 +36,49 @@ jobs:
       - name: Build
         run: bun run build
 
-      - name: Smoke test built artifact
-        run: node dist/cli.js --help
-
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: cli-dist
           path: dist/
           retention-days: 7
+
+  smoke-test:
+    name: Smoke test on Node ${{ matrix.node }} (${{ matrix.os }})
+    needs: check
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["18", "20", "22"]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cli-dist
+          path: dist/
+
+      - name: Install runtime dependencies
+        run: npm install --omit=dev --ignore-scripts
+
+      - name: Smoke test --help
+        run: node dist/cli.js --help
+
+      - name: Smoke test --list-only against a fixture
+        shell: bash
+        run: |
+          set -e
+          fixture=$(mktemp -d)
+          mkdir -p "$fixture/cypress/e2e"
+          touch "$fixture/package.json"
+          touch "$fixture/cypress/e2e/login.cy.ts"
+          cd "$fixture"
+          node "$GITHUB_WORKSPACE/dist/cli.js" test --list-only --type e2e
